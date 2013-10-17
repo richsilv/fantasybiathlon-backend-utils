@@ -3,6 +3,8 @@ var uu = require('underscore');
 var async = require('async');
 var request = require('request');
 var mongoose = require('mongoose');
+var http = require('http');
+var fs = require('fs');
 var Schema = mongoose.Schema;
 var raceSchema = mongoose.Schema({
     RaceId:String,
@@ -111,4 +113,44 @@ function flattenArray(array) {
 	}
     }
     return out;
+}
+
+function getnations(athletes, cb) {
+    var nations = [];
+    for (var i = 0; i < athletes.length; i++) {
+	if (nations.indexOf(athletes[i].Nat) < 0) {
+	    nations.push(athletes[i].Nat);
+	}
+    }
+    if (typeof cb === 'undefined') {
+	return nations;
+    }
+    else {
+	return cb(null, nations);
+    }
+}
+
+var flagcodes = require('/home/richard/Meteor/fantasybiathlon-backend-utils/flagcodes.json')
+
+function makeflagurl(nat) {
+    return 'http://flagspot.net/images/' + flagcodes[nat].charAt(0) + '/' + flagcodes[nat] + '.gif';
+}
+
+function makeflagsavefile(nat) {
+    return '/home/richard/Meteor/fantasybiathlon-backend-utils/flagfiles/' + nat + '.gif';
+}
+
+var downloadflag = function(nat, cb) {
+  var file = fs.createWriteStream(makeflagsavefile(nat));
+  var request = http.get(makeflagurl(nat), function(response) {
+    response.pipe(file);
+    file.on('finish', function() {
+      file.close();
+      cb();
+    });
+  });
+}
+
+function downloadallflags() {
+    async.each(Object.keys(flagcodes), downloadflag, function() {console.log("DONE");});
 }

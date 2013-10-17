@@ -97,6 +97,43 @@ function races_data2results_data(races, cb) {
     async.map(raceids, function(raceid, cb) {race_data2results_data(raceid.meeting, raceid.race, cb);}, cb);
 }
 
+function result_data2analysis_data(result, cb) {
+    var raceid = result.RaceId;
+    var ibuid = result.IBUId;
+    var params = { RaceId: raceid, IBUId: ibuid, RT: 340302, _: 1359993916314, callback: ''};
+    var err_resp_body2results_data = function(err, resp, body) {
+	if (!err && resp.statusCode == 200) {
+	    var analysis_data = JSON.parse(body, dateReviver);
+	    if (analysis_data !== undefined) {
+		analysis_data.Values.forEach(function(packet) {
+		    if (packet.FieldId === 'STTM') {
+			result.ShootTime = packet.Value;
+			result.ShootRank = packet.Rank;
+		    }
+		    else if (packet.FieldId === 'FINN') {
+			result.TotalRank = packet.Rank;
+		    }
+		    else if (packet.FieldId === 'A0TR') {
+			result.RangeTime = packet.Value;
+			result.RangeRank = packet.Rank;
+		    }
+		    else if (packet.FieldId === 'A0TC') {
+			result.CourseTime = packet.Value;
+			result.CourseRank = packet.Rank;
+		    }
+		});
+	    }
+	    cb(null, analysis);
+	}
+    };
+    request({url: 'http://datacenter.biathlonresults.com/modules/sportapi/api/Analysis', qs: params}, err_resp_body2results_data);
+}
+
+function results_data2analysis_data(results, cb) {
+    log(arguments.callee.name);
+    async.map(results, function(result, cb) {result_data2analysis_data(result, cb);}, cb);   
+}
+
 function ibuid2athlete_bio(ibuid, cb) {
     log(arguments.callee.name);
     var params = { IBUId: ibuid, _: 1359993916314, callback: '', RT: 340203};
@@ -217,6 +254,9 @@ function runscript(season) {
 		  Results: function(callback) {var saveresults = gensaver(global._data, 'Results', true, callback);
 					       races_data2results_data(global._data.Races, saveresults);
 					      },
+		  Analysis: function(callback) {var saveanalysis = gensaver(global._data, 'Analysis', true, callback);
+						results_data2analysis_data(global._data.Results, saveanalysis);
+					       },
 		  Athletes: function(callback) {var saveathletes = gensaver(global._data, 'Athletes', false, callback);
 						results_data2athlete_bios(global._data.Results, saveathletes);
 					       }
