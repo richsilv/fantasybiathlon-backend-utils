@@ -100,38 +100,42 @@ function races_data2results_data(races, cb) {
 function result_data2analysis_data(result, cb) {
     var raceid = result.RaceId;
     var ibuid = result.IBUId;
-    var params = { RaceId: raceid, IBUId: ibuid, RT: 340302, _: 1359993916314, callback: ''};
-    var err_resp_body2results_data = function(err, resp, body) {
+    var params = { RaceId: raceid, IBUId: ibuid, RT: 340203, _: 1359993916314, callback: ''};
+    var err_resp_body2analysis_data = function(err, resp, body) {
 	if (!err && resp.statusCode == 200) {
 	    var analysis_data = JSON.parse(body, dateReviver);
 	    if (analysis_data !== undefined) {
 		analysis_data.Values.forEach(function(packet) {
 		    if (packet.FieldId === 'STTM') {
-			result.ShootTime = packet.Value;
-			result.ShootRank = packet.Rank;
+			result.ShootTime = timetosecs(packet.Value);
+			result.ShootRank = parseInt(packet.Rank, 10);
+			if (isNaN(result.ShootRank)) {result.ShootRank = 999;}
 		    }
 		    else if (packet.FieldId === 'FINN') {
-			result.TotalRank = packet.Rank;
+			result.TotalRank = parseInt(packet.Rank, 10);
+			if (isNaN(result.TotalRank)) {result.TotalRank = 999;}
 		    }
 		    else if (packet.FieldId === 'A0TR') {
-			result.RangeTime = packet.Value;
-			result.RangeRank = packet.Rank;
+			result.RangeTime = timetosecs(packet.Value);
+			result.RangeRank = parseInt(packet.Rank, 10);
+			if (isNaN(result.RangeRank)) {result.RangeRank = 999;}
 		    }
 		    else if (packet.FieldId === 'A0TC') {
-			result.CourseTime = packet.Value;
-			result.CourseRank = packet.Rank;
+			result.CourseTime = timetosecs(packet.Value);
+			result.CourseRank = parseInt(packet.Rank, 10);
+			if (isNaN(result.CourseRank)) {result.CourseRank = 999;}
 		    }
 		});
 	    }
-	    cb(null, analysis);
+	    cb(null, result);
 	}
     };
-    request({url: 'http://datacenter.biathlonresults.com/modules/sportapi/api/Analysis', qs: params}, err_resp_body2results_data);
+    request({url: 'http://datacenter.biathlonresults.com/modules/sportapi/api/Analysis', qs: params}, err_resp_body2analysis_data);
 }
 
 function results_data2analysis_data(results, cb) {
     log(arguments.callee.name);
-    async.map(results, function(result, cb) {result_data2analysis_data(result, cb);}, cb);   
+    async.mapLimit(results, 1020, function(result, cb) {result_data2analysis_data(result, cb);}, cb);
 }
 
 function ibuid2athlete_bio(ibuid, cb) {
@@ -279,7 +283,7 @@ function getnumbers(string) {
 }
 
 function timetosecs(string) {
-    if (string==null) {return 86399;}
+    if (string === null) {return 86399;}
     timearray = string.replace('+','').split(':');
     time = 0;
     for (var i = 0; i < timearray.length; i++) {
@@ -289,7 +293,7 @@ function timetosecs(string) {
 }
 
 function parsekm(km) {
-    if (km==null) {return 0;}
+    if (km === null) {return 0;}
     sets = km.split('+');
     distance = [];
     for (var i = 0; i < sets.length; i++) {
@@ -331,3 +335,4 @@ function flattenArray(array) {
     }
     return out;
 }
+
