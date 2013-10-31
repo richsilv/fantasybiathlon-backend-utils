@@ -84,7 +84,7 @@ var resultSchema = mongoose.Schema({
     Points: Number,
     RaceTime: Date
 });
-var athleteSchema = mongoose.Schema({
+var athletesetup = {
     IBUId:String,
     Nat:String,
     Name:String,
@@ -93,12 +93,26 @@ var athleteSchema = mongoose.Schema({
     Height:Number,
     Weight:Number,
     Price:Number
+};
+var athleteSchema = mongoose.Schema(athletesetup);
+var fantasyteamSchema = mongoose.Schema({
+    UserID:String,
+    Name:String,
+    transfers:Number,
+    Athletes:{},
+    teamHistory:{}
+});
+var statisticSchema = mongoose.Schema({
+    Type:String,
+    Data:{}
 });
 
 var Race = mongoose.model('Race', raceSchema);
 var Meeting = mongoose.model('Meeting', meetingSchema);
 var Result = mongoose.model('Result', resultSchema);
 var Athlete = mongoose.model('Athlete', athleteSchema);
+var FantasyTeam = mongoose.model('FantasyTeam', fantasyteamSchema);
+var Statistic = mongoose.model('Statistic', statisticSchema);
 
 function monconnect(dbase, portno) {
     if (typeof portno == 'undefined') {portno = 27017;}
@@ -209,7 +223,7 @@ writepoints = function(variable, filename) {
 
 
 removecountries = function() {
-    
+
     Athlete.remove({$where: "this.IBUId.trimRight().length < 10"}, function(err, res) {console.log(res);});
     Meeting.remove({$where: "this.EventId.substr(0, 2) === 'SB'"}, function(err, res) {console.log(res);});
     Race.remove({$where: "this.EventId.substr(0, 2) === 'SB'"}, function(err, res) {console.log(res);});
@@ -327,4 +341,46 @@ function writeprices(infile) {
 	.on('error', function(error){
 	    console.log(error.message);
 	});
+}
+
+function averageperformance(enddate) {
+    if (!enddate) enddate = new Date();
+    var data = [];
+    Race.find({StartTime: {$lte: enddate}}, function(err, races) {
+	FantasyTeam.find({}, function(err, teams) {
+	    var teamnum = teams.length;
+	    var aths;
+	    var total;
+	    async.each(races, function(race, cbo) {
+		console.log(race.RaceId + ' started');
+		var total = 0;
+		async.each(teams, function(team, cbi) {
+		    if (team.teamHistory.length) aths = team.teamHistory.reduce(function(pre, cur) {
+			return (cur[1] > pre[1] && cur[1] <= race.StartTime) ? cur : pre;
+		    });
+		    else aths = [[], []];
+		    Result.find({RaceId: race.RaceId, IBUId: {$in: aths[0]}}, function(err, res) {
+			total += res.reduce(function(tot, r) {return tot + r.Points;}, 0);
+			cbi();
+		    });
+		}, function(err) {
+		    data.push([race.StartTime, (total / teamnum)]);
+		    console.log(race.RaceId + ' finished');
+		    cbo(err);
+		});
+	    }, function(err) {
+		data = data.sort(function(a, b) {return a[0] > b[0] ? 1 : -1;});
+		var dates = [];
+		var avgs = [];
+		data.forEach(function(d) {
+		    dates.push(d[0]);
+		    avgs.push(d[1] + (avgs.length ? avgs[avgs.length - 1] : 0));
+		});
+		global._data = [dates, avgs];
+		Statistic.update({Type: "averagepoints"}, {Type: "averagepoints", Data: [dates, avgs]}, {upsert: true}, function(err, num) {
+		    if (!err) console.log("wrote " + num + " stat items.");
+		});
+	    });
+	});
+    });
 }
