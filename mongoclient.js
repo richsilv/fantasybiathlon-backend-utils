@@ -1,4 +1,4 @@
-cs/*jslint smarttabs:true */
+/*jslint smarttabs:true */
 var _this = this;
 
 var uu = require('underscore');
@@ -106,6 +106,10 @@ var statisticSchema = mongoose.Schema({
     Type:String,
     Data:{}
 });
+var systemvarSchema = mongoose.Schema({
+    Name:String,
+    Value:{}
+});
 
 var Race = mongoose.model('Race', raceSchema);
 var Meeting = mongoose.model('Meeting', meetingSchema);
@@ -113,6 +117,7 @@ var Result = mongoose.model('Result', resultSchema);
 var Athlete = mongoose.model('Athlete', athleteSchema);
 var FantasyTeam = mongoose.model('FantasyTeam', fantasyteamSchema);
 var Statistic = mongoose.model('Statistic', statisticSchema);
+var SystemVar = mongoose.model('SystemVar', systemvarSchema);
 
 function monconnect(dbase, portno) {
     if (typeof portno == 'undefined') {portno = 27017;}
@@ -288,7 +293,7 @@ test = function() {
     var ibuid = 'BTCAN13107198501';
     Result.findOne({RaceId: raceid, IBUId: ibuid}, function(err, res) {global.example = res;});
 };
-
+pp
 function aintob(a, b, match, fields) {
     for (var i = 0; i < a.length; i++) {
 	filter = {};
@@ -320,6 +325,40 @@ function updateracetimes(force) {
 		Result.update({RaceTime: {$exists: false}, RaceId: r.RaceId}, {RaceTime: r.StartTime}, {multi: true}, function(err, ins) {console.log('Updated ' + ins.IBUId + ', ' + ins.RaceId);});
 	    }
 	});
+    });
+}
+
+function meetingenddates(cb) {
+	Meeting.find({}, function(err, res) {
+	    var enddates = res.map(function(meeting) {
+		var e = meeting.EndDate;
+		return new Date(e.getFullYear(), e.getMonth(), e.getDate()+1);
+	    });
+	    cb(enddates);
+	});
+}
+
+function writeenddates(enddates) {
+    SystemVar.update({ Name: 'meetingenddates' }, { Value: enddates }, { upsert: true }, function (err, numberAffected, raw) {
+	if (err) console.log(err);
+	else console.log("Meeting End Dates Inserted: " + numberAffected);
+    });
+}
+
+function meetingstartdates(cb) {
+	Meeting.find({}, function(err, res) {
+	    var startdates = res.map(function(meeting) {
+		var e = meeting.StartDate;
+		return new Date(e.getFullYear(), e.getMonth(), e.getDate());
+	    });
+	    cb(startdates);
+	});
+}
+
+function writestartdates(startdates) {
+    SystemVar.update({ Name: 'meetingstartdates' }, { Value: startdates }, { upsert: true }, function (err, numberAffected, raw) {
+	if (err) console.log(err);
+	else console.log("Meeting Start Dates Inserted: " + numberAffected);
     });
 }
 
@@ -384,3 +423,53 @@ function averageperformance(enddate) {
 	});
     });
 }
+
+var makesummaries = function(variable) {
+    var data = {};
+    var counter = 0;
+    Result.find({$where: "this.RaceId.slice(16) !== 'RL'", Rank: {$ne: 999}}, function(err, res) {
+	async.each(res, function(thisres, cb) {
+	    console.log(counter++);
+	    Race.findOne({RaceId: thisres.RaceId}, function(err, thisrace) {
+		if (!data[thisres.IBUId]) {
+		    data[thisres.IBUId] = {};
+		    data[thisres.IBUId].Distance = thisrace.km[0];
+		    data[thisres.IBUId].Races = 1;
+		    data[thisres.IBUId].RangeTime = thisres.RangeTime;
+		    data[thisres.IBUId].CourseTime = thisres.CourseTime;
+		    data[thisres.IBUId].Misses = thisres.ShootingTotal;
+		    data[thisres.IBUId].Visits = thisres.Shootings.length;
+		}
+		else {
+		    data[thisres.IBUId].Distance += thisrace.km[0];
+		    data[thisres.IBUId].Races += 1;
+		    data[thisres.IBUId].RangeTime += thisres.RangeTime;
+		    data[thisres.IBUId].CourseTime += thisres.CourseTime;
+		    data[thisres.IBUId].Misses += thisres.ShootingTotal;
+		    data[thisres.IBUId].Visits += thisres.Shootings.length;
+		}
+		cb();
+	    });
+	}, function(err) {
+	    if (err) console.log(err);
+	    else {
+		global[variable] = data;
+		console.log('finished');
+	    }
+	});
+    });
+};
+
+var compilesummaries = function(input) {
+    var data = {};
+    var IBUIds = Object.keys(input);
+    for (var i = 0; i < IBUIds.length; i++) {
+	data[IBUIds[i]] = {
+	    Races: input[IBUIds[i]].Races,
+	    Speed: input[IBUIds[i]].Distance * 3600/input[IBUIds[i]].CourseTime,
+	    Accuracy: 100 - (input[IBUIds[i]].Misses * 100 / (input[IBUIds[i]].Visits * 5)),
+	    RangeTime: input[IBUIds[i]].RangeTime / input[IBUIds[i]].Visits
+	};
+    }
+    return data;
+};
